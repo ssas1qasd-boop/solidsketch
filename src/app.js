@@ -753,9 +753,9 @@
   /** The body the point is inside of (its box first, then the solid itself), or null. */
   function bodyContaining(q) { for (const b of S.bodies) { const bb = b.man.boundingBox(); if (q[0] < bb.min[0] || q[0] > bb.max[0] || q[1] < bb.min[1] || q[1] > bb.max[1] || q[2] < bb.min[2] || q[2] > bb.max[2]) continue; if (insideBody(b.md, q)) return b; } return null; }
   // a view from inside a body picks what is seen through it (not the inside of the body around the camera)
-  function pick(ray, only) { const around = bodyContaining(ray.o); let best = null; let ro = ray.o;
-    if (S.section != null && secPlane) { const n = secPlane.normal, sd = q => n.x * q[0] + n.y * q[1] + n.z * q[2] + secPlane.constant; const s0 = sd(ro), k = n.x * ray.d[0] + n.y * ray.d[1] + n.z * ray.d[2]; if (s0 < 0) { if (k <= 0) return null; const t = -s0 / k; ro = [ro[0] + ray.d[0] * t, ro[1] + ray.d[1] * t, ro[2] + ray.d[2] * t]; } }   // the cut-away half cannot be tapped
-    for (const b of (only || S.bodies)) { if (b === around || b.hidden) continue; const h = C.rayMesh(b.md, ro, ray.d); if (h && (!best || h.distance < best.distance)) best = { body: b, ...h }; } return best; }
+  function pick(ray, only) { const around = bodyContaining(ray.o); let best = null; let ro = ray.o, shift = 0;
+    if (S.section != null && secPlane) { const n = secPlane.normal, sd = q => n.x * q[0] + n.y * q[1] + n.z * q[2] + secPlane.constant; const s0 = sd(ro), k = n.x * ray.d[0] + n.y * ray.d[1] + n.z * ray.d[2]; if (s0 < 0) { if (k <= 0) return null; const t = -s0 / k; shift = t; ro = [ro[0] + ray.d[0] * t, ro[1] + ray.d[1] * t, ro[2] + ray.d[2] * t]; } }   // the cut-away half cannot be tapped
+    for (const b of (only || S.bodies)) { if (b === around || b.hidden) continue; const h0 = C.rayMesh(b.md, ro, ray.d); const h = h0 && shift ? { ...h0, distance: h0.distance + shift } : h0; if (h && (!best || h.distance < best.distance)) best = { body: b, ...h }; } return best; }
   const snap = p => S.snap ? [Math.round(p[0] * 2) / 2, Math.round(p[1] * 2) / 2] : p;
 
   // ---------- sketch snapping (endpoints, midpoints, intersections, face corners, grid) ----------
@@ -3257,7 +3257,7 @@
     return out;
   }
   /** With a height the revolve is a helix: its turns, pitch and hand (a thread). */
-  function rvHelixNote() { if (!RV || !RV.height) return 'Height 0: a plain revolve · give it a height for a helix (a thread)'; const turns = Math.abs(RV.angle) / 360; return `Helix · ${fmt(turns)} turns · pitch ${fmt(Math.abs(RV.height) / Math.max(1e-9, turns))} · ${(RV.angle > 0) === (RV.height > 0) ? 'right' : 'left'}-hand`; }
+  function rvHelixNote() { if (RV && !RV.height && Math.abs(RV.angle) > 360) return 'Over 360° needs a Height (a helix) · or set the angle to 360'; if (!RV || !RV.height) return 'Height 0: a plain revolve · give it a height for a helix (a thread)'; const turns = Math.abs(RV.angle) / 360; return `Helix · ${fmt(turns)} turns · pitch ${fmt(Math.abs(RV.height) / Math.max(1e-9, turns))} · ${(RV.angle > 0) === (RV.height > 0) ? 'right' : 'left'}-hand`; }
   /** Slider moves: the note follows at once; a helix preview (tens of turns) is built once the slider rests, not per step. */
   let rvTimer = 0;
   function rvPreviewSoon() { const hn = document.getElementById('rv-helix-note'); if (hn) hn.textContent = rvHelixNote(); clearTimeout(rvTimer); if (RV && (RV.height || Math.abs(RV.angle) > 360)) rvTimer = setTimeout(rvPreview, 180); else rvPreview(); }
@@ -4112,7 +4112,7 @@
         panelEl.append(slider(onFace() ? 'Extrude distance' : 'Extrude height', 0.5, 20, 0.5, () => S.height, v => { S.height = v; }));
         const row = el('div', 'row scroll');
         if (onFace() && C.booleans) row.append(chip('Add', doneToSelect(() => extrudeLineRegions('join')), true), chip('Cut', doneToSelect(() => extrudeLineRegions('cut'))), chip('New body', doneToSelect(() => extrudeLineRegions('new'))));
-        else row.append(chip('Extrude', doneToSelect(() => extrudeLineRegions('new')), true), dirChip(), chip('Revolve', startRevolvePick));
+        else row.append(chip('Extrude', doneToSelect(() => extrudeLineRegions('new')), true), dirChip(), chip('Revolve', () => startRevolvePick()));
         panelEl.append(row);
         panelEl.append(el('div', 'note', `${regs.length} closed region${regs.length === 1 ? '' : 's'} found — lines that cross, meet, or run edge to edge across the face split it into regions automatically.`));
       }

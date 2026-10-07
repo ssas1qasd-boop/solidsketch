@@ -1587,8 +1587,8 @@
       // (a mesh check cannot see that). Touching is fine (an M12 V is exactly one pitch wide); a 0.1 % tolerance allows it.
       if (turns > 1 + 1e-9) { const zs = pts.map(p => p[1]); const ext = Math.max(...zs) - Math.min(...zs); const pitch = Math.abs(height) / turns;
         if (pitch < ext * (1 - 1e-3)) throw new Error(`That helix crosses itself: the profile is ${+ext.toFixed(3)} long along the axis but each turn rises only ${+pitch.toFixed(3)} — make the height larger or the angle smaller`); }
-      // memory: at most about 600k vertices (a 34-turn M12 thread uses about 18k)
-      const perTurn = Math.max(16, Math.min(SEG, Math.floor(600000 / Math.max(1, m0 * turns)))); if (turns * perTurn * m0 > 1.2e6) throw new Error('Too many turns for one helix · use fewer turns or a simpler profile');
+      // memory: at most about 120k vertices (a 34-turn M12 thread uses about 18k)
+      const perTurn = Math.max(12, Math.min(SEG, Math.floor(120000 / Math.max(1, m0 * turns)))); if (turns * perTurn * m0 > 240000) throw new Error('Too many turns for one helix · use fewer turns or a simpler profile');
       const n = Math.max(8, Math.ceil(turns * perTurn));
       const pos = [], tri = [];
       for (let i = 0; i <= n; i++) { const f = i / n, t = degrees * f * Math.PI / 180, c = Math.cos(t), s = Math.sin(t), dz = height * f;
