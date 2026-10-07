@@ -1581,7 +1581,15 @@
     function helix(profile, degrees, height) {
       let pts = cleanProfile(profile).map(p => [Math.max(0, p[0]), p[1]]); if (pts.length < 3) throw new Error('Profile needs at least 3 points');
       if (signedArea(pts) < 0) pts = pts.slice().reverse();
-      const turns = Math.abs(degrees) / 360; const n = Math.max(8, Math.ceil(turns * SEG)); const m0 = pts.length;
+      const turns = Math.abs(degrees) / 360; const m0 = pts.length;
+      if (!(Math.abs(height) > 0) && turns > 1 + 1e-9) throw new Error('Over 360° needs a height (a helix)');
+      // consecutive turns sit one pitch apart along the axis: a profile longer than the pitch would overlap the next turn
+      // (a mesh check cannot see that). Touching is fine (an M12 V is exactly one pitch wide); a 0.1 % tolerance allows it.
+      if (turns > 1 + 1e-9) { const zs = pts.map(p => p[1]); const ext = Math.max(...zs) - Math.min(...zs); const pitch = Math.abs(height) / turns;
+        if (pitch < ext * (1 - 1e-3)) throw new Error(`That helix crosses itself: the profile is ${+ext.toFixed(3)} long along the axis but each turn rises only ${+pitch.toFixed(3)} — make the height larger or the angle smaller`); }
+      // memory: at most about 600k vertices (a 34-turn M12 thread uses about 18k)
+      const perTurn = Math.max(16, Math.min(SEG, Math.floor(600000 / Math.max(1, m0 * turns)))); if (turns * perTurn * m0 > 1.2e6) throw new Error('Too many turns for one helix · use fewer turns or a simpler profile');
+      const n = Math.max(8, Math.ceil(turns * perTurn));
       const pos = [], tri = [];
       for (let i = 0; i <= n; i++) { const f = i / n, t = degrees * f * Math.PI / 180, c = Math.cos(t), s = Math.sin(t), dz = height * f;
         for (const p of pts) pos.push(p[0] * c, p[0] * s, p[1] + dz); }
@@ -1590,7 +1598,7 @@
       for (const t of caps) { tri.push(t[0], t[2], t[1]); tri.push(last + t[0], last + t[1], last + t[2]); }
       const make = T => Manifold.ofMesh(new Mesh({ numProp: 3, vertProperties: Float32Array.from(pos), triVerts: Uint32Array.from(T) }));
       let m = make(tri); if (m.volume() < 0) { const r = []; for (let k = 0; k < tri.length; k += 3) r.push(tri[k], tri[k + 2], tri[k + 1]); m = make(r); }
-      if (typeof m.status === 'function' && m.status() !== 'NoError') throw new Error('That helix crosses itself — make the height per turn larger than the profile');
+      if (typeof m.status === 'function' && m.status() !== 'NoError') throw new Error('The helix could not be built as a closed solid (' + m.status() + ')');
       return m;
     }
     /** regions: [{outer (CCW), holes (CW)}] → one solid per region, local coords, z in [0, h]. */

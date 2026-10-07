@@ -308,13 +308,25 @@
    * walls seen through the cut (back faces) is drawn flat orange, which reads as the section face. It is a view only.
    */
   const SECTION_PLANES = [{ name: 'Top', n: [0, 0, -1] }, { name: 'Front', n: [0, 1, 0] }, { name: 'Side', n: [-1, 0, 0] }];
+  const SECTION_COLOUR = 0xe0245e;   // crimson: not one of the body colours, so a cut face always stands out
   const secMeshes = new Map(); let secPlane = null;
-  function toggleSection() { S.section = S.section == null ? 0 : S.section + 1 < SECTION_PLANES.length ? S.section + 1 : null; const m = $('m-section'); if (m) m.textContent = 'Section view: ' + (S.section == null ? 'off' : SECTION_PLANES[S.section].name); toast(S.section == null ? 'Section view off' : 'Section view · cut by the ' + SECTION_PLANES[S.section].name + ' plane (⋮ again for the next plane)'); requestRender(); }
+  function toggleSection() { S.section = S.section == null ? 0 : S.section + 1 < SECTION_PLANES.length ? S.section + 1 : null; const m = $('m-section'); if (m) m.textContent = 'Section view: ' + (S.section == null ? 'off' : SECTION_PLANES[S.section].name); toast(S.section == null ? 'Section view off' : 'Section view · cut parallel to the ' + SECTION_PLANES[S.section].name + ' plane through the middle of the model (⋮ again for the next plane)'); requestRender(); }
+  let secCentre = null, secCentreKey = null; const secClip = [];
+  /** The centre of the visible bodies' box: the section passes through it (a part standing on the grid is cut through its middle). */
+  function secCentreNow() { if (secCentreKey === S.bodies && secCentre) return secCentre; let mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity];
+    for (const b of S.bodies) { if (b.hidden) continue; const bb = b.man.boundingBox(); for (let k = 0; k < 3; k++) { mn[k] = Math.min(mn[k], bb.min[k]); mx[k] = Math.max(mx[k], bb.max[k]); } }
+    secCentre = isFinite(mn[0]) ? [(mn[0] + mx[0]) / 2, (mn[1] + mx[1]) / 2, (mn[2] + mx[2]) / 2] : [0, 0, 0]; secCentreKey = S.bodies; return secCentre; }
+  /** True where a point is kept by the section (or when there is none). */
+  const secKeeps = q => S.section == null || !secPlane || secPlane.distanceToPoint(new THREE.Vector3(q[0], q[1], q[2])) >= -1e-9;
   function syncSection() {
-    const on = S.section != null; if (on) { const n = SECTION_PLANES[S.section].n; if (!secPlane) secPlane = new THREE.Plane(); secPlane.set(new THREE.Vector3(n[0], n[1], n[2]), 0); }
-    renderer.localClippingEnabled = on; const clip = on ? [secPlane] : null;
-    for (const [id, o] of objects) { if (o.mesh.material.clippingPlanes !== clip) { o.mesh.material.clippingPlanes = clip; o.mesh.material.needsUpdate = true; o.lines.material.clippingPlanes = clip; o.lines.material.needsUpdate = true; if (o.faceMesh) { o.faceMesh.material.clippingPlanes = clip; o.faceMesh.material.needsUpdate = true; } }
-      let sm = secMeshes.get(id); if (on) { if (!sm) { sm = new THREE.Mesh(o.mesh.geometry, new THREE.MeshBasicMaterial({ color: 0xe8954a, side: THREE.BackSide, clippingPlanes: [secPlane] })); secMeshes.set(id, sm); scene.add(sm); } if (sm.geometry !== o.mesh.geometry) sm.geometry = o.mesh.geometry; sm.material.clippingPlanes = [secPlane]; sm.visible = o.mesh.visible; }
+    const on = S.section != null; if (on) { const n = SECTION_PLANES[S.section].n; if (!secPlane) { secPlane = new THREE.Plane(); secClip.push(secPlane); } secPlane.setFromNormalAndCoplanarPoint(new THREE.Vector3(n[0], n[1], n[2]), new THREE.Vector3(...secCentreNow())); }
+    renderer.localClippingEnabled = on; const clip = on ? secClip : null;
+    const setClip = m => { if (m && (m.clippingPlanes || null) !== clip) { m.clippingPlanes = clip; m.needsUpdate = true; } };
+    for (const [id, o] of objects) { setClip(o.mesh.material); setClip(o.lines.material); if (o.faceMesh) { setClip(o.faceMesh.material); o.faceMesh.traverse(c => { if (c !== o.faceMesh) setClip(c.material); }); }
+      let sm = secMeshes.get(id); if (on) { if (!sm) { sm = new THREE.Mesh(o.mesh.geometry, new THREE.MeshBasicMaterial({ color: SECTION_COLOUR, side: THREE.BackSide, clippingPlanes: secClip })); secMeshes.set(id, sm); scene.add(sm); }
+        if (sm.geometry !== o.mesh.geometry) sm.geometry = o.mesh.geometry; sm.visible = o.mesh.visible;
+        // follows the body's live drag / preview transform
+        sm.matrixAutoUpdate = o.mesh.matrixAutoUpdate; sm.position.copy(o.mesh.position); sm.quaternion.copy(o.mesh.quaternion); sm.scale.copy(o.mesh.scale); if (!o.mesh.matrixAutoUpdate) sm.matrix.copy(o.mesh.matrix); sm.matrixWorldNeedsUpdate = true; }
       else if (sm) { scene.remove(sm); sm.material.dispose(); secMeshes.delete(id); } }
     for (const [id, sm] of secMeshes) if (!objects.has(id)) { scene.remove(sm); sm.material.dispose(); secMeshes.delete(id); }
   }
@@ -504,8 +516,9 @@
   /** Snaps the polygon's turn so a vertex sits on a 15° step (pointy-top hexagon at 90°, like the drawing). */
   const polySnapRot = P => ({ ...P, rot: Math.round(P.rot / (Math.PI / 12)) * (Math.PI / 12) });
   function setPolygon(P, label = 'Polygon') { return named(label, () => step(() => { S.polygon = { ...P }; S.sketch = polyPts(S.polygon); S.sketchClosed = true; syncScene(); })); }
+  let afStep = null;   // the undo point of the Across flats slider gesture under way (its inputs merge into one step)
   function setPolygonAF(af) { if (!S.polygon || !(af > 0)) return; setPolygon({ ...S.polygon, af }, 'Polygon size'); toast(`Across flats set to ${fmtDim(af)}`); renderUI(); }
-  function polyFlats(P) { const pts = polyPts(P); const m = (a, b) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]; const k = Math.floor(P.n / 2); return P.n % 2 === 0 ? [m(pts[0], pts[1]), m(pts[k], pts[(k + 1) % P.n])] : [m(pts[0], pts[1]), pts[(k + 1) % P.n]]; }
+  function polyFlats(P) { const pts = polyPts(P); const m = (a, b) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]; const k = Math.floor(P.n / 2); if (P.n % 2 === 0) return [m(pts[0], pts[1]), m(pts[k], pts[(k + 1) % P.n])]; const a = m(pts[0], pts[1]); return [a, [2 * P.c[0] - a[0], 2 * P.c[1] - a[1]]]; }   // odd n: across flats = twice the inner radius
   function setCircleRadius(r) { return named('Circle radius', () => {
     step(() => {
       const c = S.circle ? S.circle.c : S.sketch[0]; S.circle = { c: [c[0], c[1]], r };
@@ -556,7 +569,7 @@
   const cp2 = a => a.map(q => [q[0], q[1]]);
   function snapshot() {
     return { bodies: S.bodies, sketch: cp2(S.sketch), sketchClosed: S.sketchClosed, sketchLines: S.sketchLines.map(l => [[l[0][0], l[0][1]], [l[1][0], l[1][1]]]), lineStart: S.lineStart ? [S.lineStart[0], S.lineStart[1]] : null,
-      paths: S.paths, profiles: S.profiles, selProfiles: S.selProfiles.slice(), plane: S.plane, feats: S.feats || [], kept: (S.kept || []).map(k => ({ plane: k.plane, hidden: !!k.hidden, lines: k.lines.map(l => [l[0].slice(), l[1].slice()]) })), imported: S.imported, tool: S.tool, selectedId: S.selectedId, selectedFace: S.selectedFace, height: S.height, flip: S.flip, circle: S.circle ? { c: [S.circle.c[0], S.circle.c[1]], r: S.circle.r } : null };
+      paths: S.paths, profiles: S.profiles, selProfiles: S.selProfiles.slice(), plane: S.plane, feats: S.feats || [], kept: (S.kept || []).map(k => ({ plane: k.plane, hidden: !!k.hidden, lines: k.lines.map(l => [l[0].slice(), l[1].slice()]) })), imported: S.imported, tool: S.tool, selectedId: S.selectedId, selectedFace: S.selectedFace, height: S.height, flip: S.flip, circle: S.circle ? { c: [S.circle.c[0], S.circle.c[1]], r: S.circle.r } : null, polygon: S.polygon ? { ...S.polygon, c: S.polygon.c.slice() } : null };
   }
   // History (Shapr3D-style): every command is a named step. H.past[i] is the state before step i and carries its name;
   // H.future holds undone steps (the state after each, with its name). A step without a name gets one from what changed.
@@ -569,7 +582,7 @@
   function sameState(a, b) {
     const J = JSON.stringify;
     return a.bodies === b.bodies && (a.profiles || null) === (b.profiles || null) && (a.paths || null) === (b.paths || null) && a.plane === b.plane && a.imported === b.imported && a.sketchClosed === b.sketchClosed && a.height === b.height && !!a.flip === !!b.flip &&
-      J(a.sketch) === J(b.sketch) && J(a.sketchLines) === J(b.sketchLines) && J(a.lineStart) === J(b.lineStart) && J(a.circle) === J(b.circle);
+      J(a.sketch) === J(b.sketch) && J(a.sketchLines) === J(b.sketchLines) && J(a.lineStart) === J(b.lineStart) && J(a.circle) === J(b.circle) && J(a.polygon || null) === J(b.polygon || null);
   }
   /**
    * A step is recorded when a command starts (tapping a face opens push/pull at once, say). If it then changed nothing,
@@ -590,10 +603,11 @@
     S.paths = snap.paths || []; S.selPath = null; if (typeof swDrop === 'function') swDrop();
     S.profiles = snap.profiles || []; S.selProfiles = (snap.selProfiles || []).filter(id => S.profiles.some(q => q.id === id)); if (typeof lfDrop === 'function') lfDrop();
     S.bodies = snap.bodies; S.sketch = cp2(snap.sketch); S.sketchClosed = snap.sketchClosed; S.sketchLines = snap.sketchLines.map(l => [[l[0][0], l[0][1]], [l[1][0], l[1][1]]]);
-    S.lineStart = snap.lineStart ? [snap.lineStart[0], snap.lineStart[1]] : null; S.plane = snap.plane; S.kept = (snap.kept || []).map(k => ({ plane: k.plane, hidden: !!k.hidden, lines: k.lines.map(l => [l[0].slice(), l[1].slice()]) })); S.feats = snap.feats || []; S.imported = snap.imported; S.tool = snap.tool; S.height = snap.height; S.flip = snap.flip === 'both' ? 'both' : !!snap.flip; S.circle = snap.circle ? { c: [snap.circle.c[0], snap.circle.c[1]], r: snap.circle.r } : null;
+    S.lineStart = snap.lineStart ? [snap.lineStart[0], snap.lineStart[1]] : null; S.plane = snap.plane; S.kept = (snap.kept || []).map(k => ({ plane: k.plane, hidden: !!k.hidden, lines: k.lines.map(l => [l[0].slice(), l[1].slice()]) })); S.feats = snap.feats || []; S.imported = snap.imported; S.tool = snap.tool; S.height = snap.height; S.flip = snap.flip === 'both' ? 'both' : !!snap.flip; S.circle = snap.circle ? { c: [snap.circle.c[0], snap.circle.c[1]], r: snap.circle.r } : null; S.polygon = snap.polygon ? { ...snap.polygon, c: snap.polygon.c.slice() } : null;
     S.selectedId = snap.bodies.some(b => b.id === snap.selectedId) ? snap.selectedId : null; S.selectedFace = snap.selectedFace; S.lastSnap = null;
     S.pendingBool = null; S.faceTool = false; S.scaleTool = false; S.drawing = null; S.lastLine = -1; S.snapTip = null; SESSION = null; MV = null; VDRAG = null; S.selRegion = -1; S.selVertex = null; S.moveSurf = null;
     if (onFace() && !S.bodies.some(b => b.id === S.plane.bodyId)) { S.plane = null; S.selectedFace = null; }
+    try { if (SY && SY.axis && !symAxisAlive()) { SY.axis = null; S.selSeg = null; } } catch (e) { /* symmetry not set up yet */ }
     if (!H.batch) { save(); syncScene(); }
   }
   function filDrop() { if (typeof SC !== 'undefined' && SC) scDrop(); if (typeof FL !== 'undefined' && FL) { FL = null; filEditing = false; for (const e of [filLabel, filLabel2, filType, filRho, filGear]) e.hidden = true; } }
@@ -739,7 +753,9 @@
   /** The body the point is inside of (its box first, then the solid itself), or null. */
   function bodyContaining(q) { for (const b of S.bodies) { const bb = b.man.boundingBox(); if (q[0] < bb.min[0] || q[0] > bb.max[0] || q[1] < bb.min[1] || q[1] > bb.max[1] || q[2] < bb.min[2] || q[2] > bb.max[2]) continue; if (insideBody(b.md, q)) return b; } return null; }
   // a view from inside a body picks what is seen through it (not the inside of the body around the camera)
-  function pick(ray, only) { const around = bodyContaining(ray.o); let best = null; for (const b of (only || S.bodies)) { if (b === around || b.hidden) continue; const h = C.rayMesh(b.md, ray.o, ray.d); if (h && (!best || h.distance < best.distance)) best = { body: b, ...h }; } return best; }
+  function pick(ray, only) { const around = bodyContaining(ray.o); let best = null; let ro = ray.o;
+    if (S.section != null && secPlane) { const n = secPlane.normal, sd = q => n.x * q[0] + n.y * q[1] + n.z * q[2] + secPlane.constant; const s0 = sd(ro), k = n.x * ray.d[0] + n.y * ray.d[1] + n.z * ray.d[2]; if (s0 < 0) { if (k <= 0) return null; const t = -s0 / k; ro = [ro[0] + ray.d[0] * t, ro[1] + ray.d[1] * t, ro[2] + ray.d[2] * t]; } }   // the cut-away half cannot be tapped
+    for (const b of (only || S.bodies)) { if (b === around || b.hidden) continue; const h = C.rayMesh(b.md, ro, ray.d); if (h && (!best || h.distance < best.distance)) best = { body: b, ...h }; } return best; }
   const snap = p => S.snap ? [Math.round(p[0] * 2) / 2, Math.round(p[1] * 2) / 2] : p;
 
   // ---------- sketch snapping (endpoints, midpoints, intersections, face corners, grid) ----------
@@ -1807,6 +1823,7 @@
           const a = pts[i - 1], c = pts[i]; const q = [a[0] + (c[0] - a[0]) * u, a[1] + (c[1] - a[1]) * u, a[2] + (c[2] - a[2]) * u];
           const dq = Math.hypot(q[0] - cp.x, q[1] - cp.y, q[2] - cp.z);
           if (hit && hit.distance < dq - Math.max(0.02 * dq, 6 * worldPerPx())) continue;   // a surface is in front of this edge
+          if (!secKeeps(q)) continue;   // cut away by the section view
           best = { body: b, index, d, q };
         }
       });
@@ -3134,8 +3151,10 @@
   function startSymmetry() { if (!S.sketchLines.length) { toast('Draw some lines first'); return; } TM = null; AR = null; SY = { axis: null }; renderUI(); toast('Symmetry · tap the line to mirror across'); }
   const mirrorAcross = (q, A, B) => { const dx = B[0] - A[0], dy = B[1] - A[1]; const L2 = dx * dx + dy * dy; const t = ((q[0] - A[0]) * dx + (q[1] - A[1]) * dy) / L2; const f = [A[0] + dx * t, A[1] + dy * t]; return [2 * f[0] - q[0], 2 * f[1] - q[1]]; };
   const segSame = (l, a, b) => { const e = (P, Q) => Math.hypot(P[0] - Q[0], P[1] - Q[1]) < 1e-7; return (e(l[0], a) && e(l[1], b)) || (e(l[0], b) && e(l[1], a)); };
-  function mirrorLines(segs) { const [A, B] = SY.axis; let n = 0; step(() => { for (const g of segs) { if (segSame(g, A, B)) continue; const m = [mirrorAcross(g[0], A, B), mirrorAcross(g[1], A, B)]; if (S.sketchLines.some(l => segSame(l, m[0], m[1]))) continue; S.sketchLines.push(m); n++; } syncScene(); }, 'Symmetry'); toast(n ? `Mirrored ${n} line${n === 1 ? '' : 's'}` : 'Already symmetric'); renderUI(); }
+  const symAxisAlive = () => !!(SY && SY.axis && S.sketchLines.some(l => segSame(l, SY.axis[0], SY.axis[1])));
+  function mirrorLines(segs) { if (!SY || !SY.axis) return; if (!symAxisAlive()) { SY.axis = null; S.selSeg = null; syncScene(); renderUI(); toast('The mirror line is gone · tap the line to mirror across'); return; } const [A, B] = SY.axis; let n = 0; step(() => { for (const g of segs) { if (segSame(g, A, B)) continue; const m = [mirrorAcross(g[0], A, B), mirrorAcross(g[1], A, B)]; if (S.sketchLines.some(l => segSame(l, m[0], m[1]))) continue; S.sketchLines.push(m); n++; } syncScene(); }, 'Symmetry'); toast(n ? `Mirrored ${n} line${n === 1 ? '' : 's'}` : 'Already symmetric'); renderUI(); }
   function symTap(x, y) {
+    if (SY.axis && !symAxisAlive()) { SY.axis = null; S.selSeg = null; syncScene(); renderUI(); }
     const L = lineAt(x, y); if (!L) { toast(SY.axis ? 'Tap a line to mirror it' : 'Tap the line to mirror across'); return; }
     if (!SY.axis) { SY.axis = L; S.selSeg = L; syncScene(); renderUI(); toast('Mirror line chosen · tap lines to mirror, or Mirror all'); return; }
     mirrorLines([L]);
@@ -3231,7 +3250,7 @@
     const U = W2(p[0], p[1]), N = W2(d[0], d[1]); const V = [N[1] * U[2] - N[2] * U[1], N[2] * U[0] - N[0] * U[2], N[0] * U[1] - N[1] * U[0]];
     const frame = { ...f, origin, u: U, v: V, n: N }; const out = [];
     for (const r of regs) {
-      try { const hgt = (RV && RV.height) || 0; const turn = loop => { if (hgt || Math.abs(ang) > 360) { if (!C.helix) throw new Error('Revolve with a height needs the Manifold engine'); return C.helix(loop, ang, hgt); } const a = Math.abs(ang); const m = C.revolve(loop, a, true); return ang < 0 ? m.mirror([0, 1, 0]) : m; };
+      try { const hgt = (RV && RV.height) || 0; const turn = loop => { if (!hgt && Math.abs(ang) > 360) throw new Error('Over 360° needs a Height (a helix) · or set the angle to 360'); if (hgt) { if (!C.helix) throw new Error('Revolve with a height needs the Manifold engine'); return C.helix(loop, ang, hgt); } const a = Math.abs(ang); const m = C.revolve(loop, a, true); return ang < 0 ? m.mirror([0, 1, 0]) : m; };
         let sol = turn(toLocal(r.outer)); for (const h of r.holes || []) sol = sol.subtract(turn(toLocal(h))); out.push(C.placeInFrame(sol, frame)); }
       catch (e) { return e.message || String(e); }
     }
@@ -3239,8 +3258,12 @@
   }
   /** With a height the revolve is a helix: its turns, pitch and hand (a thread). */
   function rvHelixNote() { if (!RV || !RV.height) return 'Height 0: a plain revolve · give it a height for a helix (a thread)'; const turns = Math.abs(RV.angle) / 360; return `Helix · ${fmt(turns)} turns · pitch ${fmt(Math.abs(RV.height) / Math.max(1e-9, turns))} · ${(RV.angle > 0) === (RV.height > 0) ? 'right' : 'left'}-hand`; }
+  /** Slider moves: the note follows at once; a helix preview (tens of turns) is built once the slider rests, not per step. */
+  let rvTimer = 0;
+  function rvPreviewSoon() { const hn = document.getElementById('rv-helix-note'); if (hn) hn.textContent = rvHelixNote(); clearTimeout(rvTimer); if (RV && (RV.height || Math.abs(RV.angle) > 360)) rvTimer = setTimeout(rvPreview, 180); else rvPreview(); }
   /** Shows the revolve as a translucent green solid while the angle is set. */
   function rvPreview() {
+    clearTimeout(rvTimer);
     { const hn = document.getElementById('rv-helix-note'); if (hn) hn.textContent = rvHelixNote(); }
     rvClearPreview(); if (!RV || !RV.axis) { requestRender(); return; }
     const regs = RV.only || lineRegions(); const res = revolveSolids(RV.axis, regs, RV.angle);
@@ -3263,7 +3286,7 @@
   function revolveFrame(f) { return { ...f, u: f.u, v: [-f.n[0], -f.n[1], -f.n[2]], n: f.v }; }
   function revolveSketch() { named('Revolve', () => step(() => { const m = tryGeom(() => C.placeInFrame(C.revolve(S.sketch, 360, true), revolveFrame(plane()))); if (!m) return; addBody('Revolve', m); clearSketch(); })); }
   function clearSketch() { if (!S.sketch.length && !S.sketchClosed) return; step(() => { S.sketch = []; S.sketchClosed = false; S.circle = null; S.polygon = null; syncScene(); }, 'Clear sketch'); }
-  function undoPoint() { if (!S.sketch.length) return; step(() => { if (S.sketchClosed && S.tool === 'polyline') S.sketchClosed = false; else if (S.sketchClosed) { S.sketch = S.circle ? [S.circle.c] : S.sketch.slice(0, 1); S.sketchClosed = false; S.circle = null; } else S.sketch.pop(); syncScene(); }, 'Remove last point'); }
+  function undoPoint() { if (!S.sketch.length) return; step(() => { if (S.sketchClosed && S.tool === 'polyline') S.sketchClosed = false; else if (S.sketchClosed) { const n = S.sketch.length; S.sketch = S.circle ? [S.circle.c] : S.tool === 'polygon' ? [[S.sketch.reduce((a, q) => a + q[0], 0) / n, S.sketch.reduce((a, q) => a + q[1], 0) / n]] : S.sketch.slice(0, 1); S.sketchClosed = false; S.circle = null; S.polygon = null; } else S.sketch.pop(); syncScene(); }, 'Remove last point'); }
 
   /**
    * Extrude mode for a flat face: grows (v > 0) or cuts (v < 0) a straight prism from the face outline — optionally
@@ -3823,7 +3846,7 @@
     if (OP) { OP = null; opPreview(); }
     MT = null; FE = null;
     if (RV) revolveCancel();
-    if (SY) { SY = null; S.selSeg = null; }
+    if (SY) { SY = null; S.selSeg = null; syncScene(); }
     if (t === S.tool) return;
     if (!keepPrompt.hidden) keepPrompt.hidden = true;
     if (typeof TR !== 'undefined' && TR) { TR = null; trDraw(); } clearHover();
@@ -3885,6 +3908,7 @@
     if (SESSION) return 'Drag the big arrow to change the distance' + (SESSION.target.draftable && Math.abs(SESSION.value) > 1e-9 ? ' · drag the small tilted arrow on the rim to shrink or grow the top' : '') + ' · tap elsewhere to finish';
     if (S.tool === 'edit' && S.selSeg) return 'Line selected · drag it to move it · tap its length to type it · Delete line removes it';
     if (S.tool === 'edit') return S.selVertex ? 'Point selected · drag it to move it (connected lines follow) · Delete point removes its lines' : S.selRegion >= 0 ? 'Region selected · drag the blue arrow to extrude, the white arrow to taper the walls' : regionCache.length ? 'Tap a filled region to extrude it · drag any point to move it' : 'Drag any sketch point to move it · tap a region to extrude it';
+    if (S.drawing && S.tool === 'polygon') { const P = polySnapRot(polyFrom(S.drawing.start, S.drawing.end)); return `Across flats ${fmtDim(P.af)} · ${P.n} sides${snapNote} · release to place`; }
     if (S.drawing) return `${S.tool === 'circle' ? 'R ' : ''}${fmtDim(Math.hypot(S.drawing.end[0] - S.drawing.start[0], S.drawing.end[1] - S.drawing.start[1]))}${snapNote} · release to place`;
     if (S.tool === 'line') {
       const regs = lineRegions().length;
@@ -4048,7 +4072,7 @@
     } else if (SY) {
       panelEl.hidden = false;
       panelEl.append(el('div', 'note', SY.axis ? 'Symmetry · tap each line to mirror across the orange line, or Mirror all' : 'Symmetry · tap the line to mirror across (a construction line works)'));
-      const row = el('div', 'row scroll'); if (SY.axis) row.append(chip('Mirror all', () => mirrorLines(S.sketchLines.slice())), chip('Other line', () => { SY.axis = null; S.selSeg = null; syncScene(); renderUI(); })); row.append(chip('Done', endSymmetry, true)); panelEl.append(row);
+      const row = el('div', 'row scroll'); if (SY.axis) row.append(chip('Mirror all', () => mirrorLines(S.sketchLines.slice())), chip('Other line', () => { if (!SY) return; SY.axis = null; S.selSeg = null; syncScene(); renderUI(); })); row.append(chip('Done', endSymmetry, true)); panelEl.append(row);
     } else if (TM || AR) {
       panelEl.hidden = false;
       panelEl.append(el('div', 'note', TM ? 'Trim · tap the piece of a line to cut away — it is cut back to the nearest crossing' : `Arc · tap the start, the end, then a point on the curve (${AR.pts.length} of 3)`));
@@ -4062,8 +4086,8 @@
     } else if (RV) {
       panelEl.hidden = false;
       panelEl.append(el('div', 'note', RV.axis ? 'Revolve · 1 region & 1 line · set the angle, then Done' : 'Revolve · tap the line to turn the shape around (an edge of the shape works too), or use the vertical axis'));
-      panelEl.append(slider('Angle °', 10, 360, 5, () => RV.angle, v => { RV.angle = Math.abs(v) < 0.01 ? 360 : Math.max(-360000, Math.min(360000, v)); rvPreview(); }));
-      panelEl.append(slider('Height', 0, 20, 0.05, () => RV.height || 0, v => { RV.height = isFinite(v) ? v : 0; rvPreview(); }));
+      panelEl.append(slider('Angle °', 10, 360, 5, () => RV.angle, v => { RV.angle = Math.abs(v) < 0.01 ? 360 : Math.max(-36000, Math.min(36000, v)); rvPreviewSoon(); }));
+      panelEl.append(slider('Height', 0, 20, 0.05, () => RV.height || 0, v => { RV.height = isFinite(v) ? v : 0; rvPreviewSoon(); }));
       { const hn = el('div', 'note'); hn.id = 'rv-helix-note'; hn.textContent = rvHelixNote(); panelEl.append(hn); }
       const row = el('div', 'row scroll');
       if (RV.axis) row.append(chip('Done', revolveDone, true), chip('Cancel', revolveCancel));
@@ -4112,7 +4136,7 @@
       if (S.tool === 'polygon') { const row = el('div', 'row scroll'); row.append(el('span', 'note', 'Sides'));
         for (const n of [3, 4, 5, 6, 8, 10, 12]) row.append(chip(String(n), () => { S.polySides = n; if (S.polygon && S.sketchClosed) setPolygon({ ...S.polygon, n }, 'Polygon sides'); renderUI(); }, (S.polySides || 6) === n));
         panelEl.append(row);
-        if (S.polygon && S.sketchClosed) panelEl.append(slider('Across flats', 0.5, 50, 0.1, () => S.polygon.af, v => { if (v > 0) { S.polygon = { ...S.polygon, af: v }; S.sketch = polyPts(S.polygon); syncScene(); } })); }
+        if (S.polygon && S.sketchClosed) panelEl.append(slider('Across flats', 0.5, 50, 0.1, () => S.polygon.af, v => { if (!(v > 0) || !S.polygon) return; if (H.past[H.past.length - 1] !== afStep) { record('Polygon size'); afStep = H.past[H.past.length - 1]; } S.polygon = { ...S.polygon, af: v }; S.sketch = polyPts(S.polygon); syncSketch(); syncRegions(); requestRender(); })); }
       if (S.sketchClosed) {
         panelEl.append(slider(onFace() ? 'Extrude distance' : 'Extrude height', 0.5, 20, 0.5, () => S.height, v => { S.height = v; }));
         const row = el('div', 'row scroll');
