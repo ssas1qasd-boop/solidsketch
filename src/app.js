@@ -3237,8 +3237,11 @@
     }
     return out;
   }
+  /** With a height the revolve is a helix: its turns, pitch and hand (a thread). */
+  function rvHelixNote() { if (!RV || !RV.height) return 'Height 0: a plain revolve · give it a height for a helix (a thread)'; const turns = Math.abs(RV.angle) / 360; return `Helix · ${fmt(turns)} turns · pitch ${fmt(Math.abs(RV.height) / Math.max(1e-9, turns))} · ${(RV.angle > 0) === (RV.height > 0) ? 'right' : 'left'}-hand`; }
   /** Shows the revolve as a translucent green solid while the angle is set. */
   function rvPreview() {
+    { const hn = document.getElementById('rv-helix-note'); if (hn) hn.textContent = rvHelixNote(); }
     rvClearPreview(); if (!RV || !RV.axis) { requestRender(); return; }
     const regs = RV.only || lineRegions(); const res = revolveSolids(RV.axis, regs, RV.angle);
     if (typeof res === 'string') { toast(res); requestRender(); return; }
@@ -4061,7 +4064,7 @@
       panelEl.append(el('div', 'note', RV.axis ? 'Revolve · 1 region & 1 line · set the angle, then Done' : 'Revolve · tap the line to turn the shape around (an edge of the shape works too), or use the vertical axis'));
       panelEl.append(slider('Angle °', 10, 360, 5, () => RV.angle, v => { RV.angle = Math.abs(v) < 0.01 ? 360 : Math.max(-360000, Math.min(360000, v)); rvPreview(); }));
       panelEl.append(slider('Height', 0, 20, 0.05, () => RV.height || 0, v => { RV.height = isFinite(v) ? v : 0; rvPreview(); }));
-      if (RV.height) { const turns = Math.abs(RV.angle) / 360; panelEl.append(el('div', 'note', `Helix · ${fmt(turns)} turns · pitch ${fmt(Math.abs(RV.height) / Math.max(1e-9, turns))} · ${(RV.angle > 0) === (RV.height > 0) ? 'right' : 'left'}-hand`)); }
+      { const hn = el('div', 'note'); hn.id = 'rv-helix-note'; hn.textContent = rvHelixNote(); panelEl.append(hn); }
       const row = el('div', 'row scroll');
       if (RV.axis) row.append(chip('Done', revolveDone, true), chip('Cancel', revolveCancel));
       else row.append(chip('Vertical axis', () => revolveAboutLine([[0, 0], [0, 1]])), chip('Cancel', revolveCancel));
