@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- System dark mode: dark theme, so the page sees prefers-color-scheme: dark -->
+    <style name="AppTheme" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:colorAccent">@color/accent</item>
+        <item name="android:colorPrimary">@color/accent</item>
+        <item name="android:windowBackground">@color/page_bg_dark</item>
+        <item name="android:statusBarColor">@color/page_bg_dark</item>
+        <item name="android:navigationBarColor">@color/page_bg_dark</item>
+    </style>
+</resources>

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Page background colours of solidsketch.html (light / dark) -->
+    <color name="page_bg">#EEF1F5</color>
+    <color name="page_bg_dark">#1C1E23</color>
+    <color name="accent">#2F6FED</color>
+    <color name="icon_bg">#2F6FED</color>
+
+    <!-- Light theme, no action bar. The WebView reports prefers-color-scheme from
+         this theme (targetSdk 33+), so values-night switches the page to dark. -->
+    <style name="AppTheme" parent="@android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:colorAccent">@color/accent</item>
+        <item name="android:colorPrimary">@color/accent</item>
+        <item name="android:windowBackground">@color/page_bg</item>
+        <item name="android:statusBarColor">@color/page_bg</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+</resources>

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Adaptive icon foreground: white isometric cube (hexagon split in three faces),
+     radius 22 around the centre of the 108x108 canvas, inside the 66dp safe zone. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- top face -->
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M54,32 L73.05,43 L54,54 L34.95,43 Z" />
+    <!-- left face -->
+    <path android:fillColor="#DFE8FC"
+        android:pathData="M34.95,43 L54,54 L54,76 L34.95,65 Z" />
+    <!-- right face -->
+    <path android:fillColor="#B9CDF8"
+        android:pathData="M54,54 L73.05,43 L73.05,65 L54,76 Z" />
+</vector>
