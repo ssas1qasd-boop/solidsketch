@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>SolidSketch — touch CAD (v24)</title>
+<style>
+  :root {
+    box-sizing: border-box;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    --bg: #eef1f5; --panel: rgba(255,255,255,0.92); --panel2: rgba(255,255,255,0.8); --fg: #1a1d24; --muted: #5b6270;
+    --chip: #e2e6ec; --chip-fg: #1a1d24; --chip-sel: #2f6fed; --chip-sel-fg: #fff; --accent: #2f6fed; --border: rgba(0,0,0,0.08);
+    --toast: #1a1d24; --toast-fg: #fff; --font: -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg: #1c1e23; --panel: rgba(34,37,44,0.94); --panel2: rgba(34,37,44,0.82); --fg: #eef0f4; --muted: #a2a9b6; --chip: #2f333c; --chip-fg: #eef0f4; --chip-sel: #5c9eed; --chip-sel-fg: #0e1420; --accent: #5c9eed; --border: rgba(255,255,255,0.08); --toast: #eef0f4; --toast-fg: #1a1d24; } }
+  :root[data-theme="dark"] { --bg: #1c1e23; --panel: rgba(34,37,44,0.94); --panel2: rgba(34,37,44,0.82); --fg: #eef0f4; --muted: #a2a9b6; --chip: #2f333c; --chip-fg: #eef0f4; --chip-sel: #5c9eed; --chip-sel-fg: #0e1420; --accent: #5c9eed; --border: rgba(255,255,255,0.08); --toast: #eef0f4; --toast-fg: #1a1d24; }
+  html { scroll-padding-top: env(safe-area-inset-top, 0px); height: 100%; }
+  body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font-family: var(--font); overflow: hidden; -webkit-user-select: none; user-select: none; }
+  *, *::before, *::after { box-sizing: inherit; }
+  #c { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+  #top { position: fixed; top: 0; left: 0; right: 0; padding: calc(env(safe-area-inset-top, 0px) + 8px) 10px 0; display: flex; justify-content: center; pointer-events: none; }
+  .bar { pointer-events: auto; display: flex; align-items: center; gap: 4px; width: 100%; max-width: 720px; background: var(--panel); border: 1px solid var(--border); border-radius: 16px; padding: 6px 6px 6px 14px; backdrop-filter: blur(8px); box-shadow: 0 4px 18px rgba(0,0,0,0.12); }
+  .title { display: flex; flex-direction: column; line-height: 1.15; }
+  .title b { font-size: 15px; } .title small { font-size: 11px; color: var(--muted); }
+  #count { margin-left: 10px; font-size: 12px; color: var(--muted); }
+  .spacer { flex: 1; }
+  .btn { border: 0; background: transparent; color: var(--accent); font: inherit; font-size: 14px; font-weight: 600; padding: 8px 10px; border-radius: 10px; cursor: pointer; }
+  .btn:disabled { color: var(--muted); opacity: 0.5; }
+  .icon { width: 40px; height: 40px; display: grid; place-items: center; font-size: 18px; color: var(--fg); }
+  #menuwrap { position: relative; }
+  #menu { position: absolute; right: 0; top: 44px; background: var(--panel); border: 1px solid var(--border); border-radius: 12px; min-width: 190px; padding: 6px; box-shadow: 0 8px 30px rgba(0,0,0,0.25); z-index: 5; }
+  #menu button { display: block; width: 100%; text-align: left; border: 0; background: transparent; color: var(--fg); font: inherit; font-size: 14px; padding: 10px 12px; border-radius: 8px; cursor: pointer; }
+  #menu button:hover { background: var(--chip); }
+  #bottom { position: fixed; left: 0; right: 0; bottom: 0; padding: 0 10px calc(env(safe-area-inset-bottom, 0px) + 10px); display: flex; flex-direction: column; align-items: center; gap: 8px; pointer-events: none; }
+  #bottom > * { pointer-events: auto; }
+  #hint { background: var(--panel2); border: 1px solid var(--border); border-radius: 999px; padding: 6px 14px; font-size: 12.5px; color: var(--fg); max-width: 92vw; text-align: center; backdrop-filter: blur(8px); }
+  #panel { width: 100%; max-width: 720px; background: var(--panel); border: 1px solid var(--border); border-radius: 16px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; backdrop-filter: blur(8px); box-shadow: 0 4px 18px rgba(0,0,0,0.12); }
+  #panel[hidden] { display: none; }
+  .row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .row.scroll { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .row.scroll::-webkit-scrollbar { display: none; }
+  .note { font-size: 12px; color: var(--muted); }
+  #tools { width: 100%; max-width: 720px; display: flex; gap: 6px; overflow-x: auto; padding: 2px 2px 4px; scrollbar-width: none; }
+  #tools::-webkit-scrollbar { display: none; }
+  .chip { flex: 0 0 auto; border: 1px solid var(--border); background: var(--chip); color: var(--chip-fg); font: inherit; font-size: 13.5px; font-weight: 500; padding: 9px 14px; border-radius: 999px; cursor: pointer; white-space: nowrap; }
+  .chip.sel { background: var(--chip-sel); color: var(--chip-sel-fg); border-color: transparent; }
+  .slider .lab { display: flex; justify-content: space-between; font-size: 13px; }
+  .slider .val { border: 0; background: var(--chip); color: var(--fg); font: inherit; font-weight: 600; padding: 2px 10px; border-radius: 8px; }
+  .slider input[type=range] { width: 100%; accent-color: var(--accent); }
+  .slider input.num { width: 90px; font: inherit; font-weight: 600; padding: 2px 8px; border-radius: 8px; border: 1px solid var(--accent); background: var(--chip); color: var(--fg); }
+  #snaptip { position: fixed; transform: translate(-50%, -100%); background: #2b3140; color: #fff; font-size: 11.5px; padding: 3px 8px; border-radius: 6px; pointer-events: none; white-space: nowrap; z-index: 6; margin-top: -14px; }
+  #snaptip[hidden] { display: none; }
+  #dim { position: fixed; transform: translate(-50%, -50%); font: 600 12.5px ui-monospace, Menlo, Consolas, monospace; color: var(--fg); background: var(--panel); border: 1px solid var(--border); padding: 2px 7px; border-radius: 6px; white-space: nowrap; z-index: 6; cursor: pointer; }
+  #dim.live { border-color: #2f6fed; box-shadow: 0 0 0 1px #2f6fed inset; pointer-events: none; }
+  #dim.editable { border-color: #2f6fed; text-decoration: underline dotted; }
+  #dim.fixed { pointer-events: none; }
+  #dim[hidden] { display: none; }
+  #dim input { width: 90px; font: inherit; border: 0; background: transparent; color: var(--fg); outline: none; }
+  #gizmo-label { position: fixed; transform: translate(0, -50%); font: 600 12.5px ui-monospace, Menlo, Consolas, monospace; color: var(--fg); background: var(--panel); border: 1.5px solid #2f6fed; padding: 2px 8px; border-radius: 7px; white-space: nowrap; z-index: 6; pointer-events: none; }
+  #gizmo-label[hidden] { display: none; }
+  #move-label { position: fixed; transform: translate(0, -50%); font: 600 12.5px ui-monospace, Menlo, Consolas, monospace; color: var(--fg); background: var(--panel); border: 1.5px solid #2f6fed; padding: 2px 8px; border-radius: 7px; white-space: nowrap; z-index: 6; pointer-events: none; }
+  #move-label.editable { pointer-events: auto; text-decoration: underline dotted; cursor: pointer; }
+  #move-label.live { box-shadow: 0 0 0 1px #2f6fed inset; }
+  #move-label[hidden] { display: none; }
+  #move-label input { width: 80px; font: inherit; border: 0; background: transparent; color: var(--fg); outline: none; }
+  #draft-label { position: fixed; transform: translate(0, -50%); font: 600 12.5px ui-monospace, Menlo, Consolas, monospace; color: var(--fg); background: var(--panel); border: 1.5px solid #2f6fed; padding: 2px 8px; border-radius: 7px; white-space: nowrap; z-index: 6; pointer-events: none; }
+  #draft-label[hidden] { display: none; }
+  #toast { position: fixed; left: 50%; top: calc(env(safe-area-inset-top, 0px) + 72px); transform: translateX(-50%) translateY(-10px); background: var(--toast); color: var(--toast-fg); padding: 10px 16px; border-radius: 12px; font-size: 13.5px; opacity: 0; transition: opacity .2s, transform .2s; pointer-events: none; max-width: 90vw; text-align: center; z-index: 9; }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  #loading { position: fixed; inset: 0; display: grid; place-items: center; font-size: 15px; color: var(--muted); background: var(--bg); z-index: 20; padding: 24px; text-align: center; }
+  #help, #paste { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: grid; place-items: center; z-index: 10; padding: 16px; }
+  #help[hidden], #paste[hidden] { display: none; }
+  .card { background: var(--panel); color: var(--fg); border-radius: 16px; padding: 18px 20px; max-width: 520px; width: 100%; max-height: 80vh; overflow: auto; font-size: 14px; line-height: 1.5; }
+  .card h2 { margin: 0 0 8px; font-size: 18px; } .card table { width: 100%; border-collapse: collapse; } .card td { padding: 5px 0; border-bottom: 1px solid var(--border); vertical-align: top; } .card td:first-child { color: var(--muted); width: 45%; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="top">
+  <div class="bar">
+    <div class="title"><b>SolidSketch</b><small id="engine">starting…</small></div>
+    <span id="count">0 bodies</span>
+    <span class="spacer"></span>
+    <button class="btn" id="undo" disabled title="Undo (Ctrl+Z, three-finger swipe left)">Undo</button>
+    <button class="btn" id="redo" disabled title="Redo (Ctrl+Y, three-finger swipe right)">Redo</button>
+    <button class="btn icon" id="del" title="Delete" disabled aria-label="Delete selected body">🗑</button>
+    <div id="menuwrap">
+      <button class="btn icon" id="more" aria-label="More">⋮</button>
+      <div id="menu" hidden>
+        <button id="m-import">Import DXF / DWG…</button>
+        <button id="m-paste">Paste DXF text…</button>
+        <button id="m-export">Export STL + OBJ (zip)</button>
+        <button id="m-export-dxf">Export DXF drawing (zip)</button>
+        <button id="m-exact">Exact engine (beta): off</button>
+        <button id="m-reset">Reset view</button>
+        <button id="m-section">Section view: off</button>
+        <button id="m-help">Gestures &amp; help</button>
+        <button id="m-clear">Clear all</button>
+      </div>
+    </div>
+  </div>
+</div>
+<div id="bottom">
+  <div id="hint">Loading…</div>
+  <div id="panel" hidden></div>
+  <div id="tools"></div>
+</div>
+<input type="file" id="file-in" accept=".dxf,.dwg,.DXF,.DWG,application/dxf,application/acad,image/vnd.dxf,image/vnd.dwg" hidden>
+<div id="paste" hidden>
+  <div class="card">
+    <h2>Paste DXF text</h2>
+    <p class="note">Open the .dxf in any text app, copy everything, paste it here. (For phones where the file picker is blocked.)</p>
+    <textarea id="paste-text" rows="8" style="width:100%;font:12px monospace;border-radius:8px;border:1px solid var(--border);background:var(--chip);color:var(--fg);padding:8px"></textarea>
+    <div class="row" style="justify-content:flex-end;margin-top:8px"><button class="chip" id="paste-cancel">Cancel</button><button class="chip sel" id="paste-go">Import</button></div>
+  </div>
+</div>
+<div id="snaptip" hidden></div>
+<div id="dim" hidden></div>
+<div id="toast"></div>
+<div id="loading">Loading the geometry engine…</div>
+<div id="help" hidden>
+  <div class="card">
+    <h2>How to model</h2>
+    <table>
+      <tr><td>Orbit</td><td>One finger drag on the grid</td></tr>
+      <tr><td>Pan / zoom</td><td>Two-finger drag / pinch</td></tr>
+      <tr><td>Select a body</td><td>Tap it. Tap again to select a face.</td></tr>
+      <tr><td>Extrude (gizmo)</td><td>Closed sketches are filled in blue. The selected one (orange) shows a blue double arrow: drag it to extrude live — the distance snaps to 0.1 and shows on a dashed axis. Drag outward on a face to add, inward to cut. Once extruded, a small tilted blue arrow appears on the rim of the top: drag it and the wall rotates about the base edge — the top circle shrinks (cone) or grows (flare), up to ±60°, with the angle shown. Tap elsewhere to finish.</td></tr>
+      <tr><td>Faces</td><td>Tapping a face highlights its whole smooth surface: a cylinder wall is one face, a box side is one face. Only edges where surfaces really meet are drawn.</td></tr>
+      <tr><td>Push / pull</td><td>Select a body, tap a face, then drag the blue arrow (or set a distance and Apply). Negative cuts. While the arrow is out, a dashed arc appears at the rim: drag the small arrow along it to rotate the wall — the pulled face shrinks or grows with the direction of rotation.</td></tr>
+      <tr><td>Move / rotate about a point</td><td>In Move/Rotate, tap <b>Move gizmo</b> (or hold Ctrl on a computer) and drag the gizmo itself: its centre snaps to the body's corners, edge middles and face centres, its arrows slide it along an axis and its rings turn its axes. The body does not change. Tap Move gizmo again, then rotate: the face or body turns about the new point, so a gizmo on an edge makes the face hinge on that edge and a gizmo above it swings the face round. Reset gizmo puts it back.</td></tr>
+      <tr><td>Reshape a sketch</td><td>In <b>Edit sketch</b>: <b>drag a side of a rectangle</b> and it slides parallel to itself while the sides next to it stretch, so it stays a rectangle. <b>Drag a corner</b> and the rectangle resizes, keeping its directions, with the opposite corner staying put. On a <b>polyline</b>, drag a point and just that point moves with its lines following, or drag a line and it moves with both ends. While you drag, the side lengths show live and the old shape stays faintly visible. Tap a side, then its length label, to type an exact length. Every drag is one Undo step.</td></tr>
+      <tr><td>Translate</td><td>Select a body, then <b>Translate</b> (in the panel, also in Move/Rotate). <b>1.</b> Tap the <b>start point</b> on the body: corners, edge middles and face centres snap. <b>2.</b> Tap the <b>end point</b>: a corner, edge middle or face centre of any body, or a sketch, path or profile point (a dashed line shows the distance as you look). <b>3. Done</b> moves the body so the start point sits exactly on the end point; <b>Copy</b> keeps the original and adds the moved copy; Cancel leaves everything as it was. One Undo step.</td></tr>
+      <tr><td>Highlight</td><td>Whatever a tap would pick lights up first: a face (light blue), an edge, a profile or path; in a sketch, a line, a shape (orange) or a circle's centre. With a mouse it shows as you point; with a finger, while it is pressed — let go to pick it, or drag to turn the view instead.</td></tr>
+      <tr><td>Sweep</td><td><b>1. Path:</b> draw an open chain of lines (Polyline or Line), then <b>Make path</b>: it stays in the scene as a teal line. <b>2. Profile:</b> draw the cross-section (a circle, say) and <b>Make profile</b>, then stand it across the start of the path with Move/Rotate (turn it 90°) and drag it by its <b>centre point</b> onto the path's start: it snaps there (a profile placed elsewhere is also carried to the path). <b>3. Pick:</b> in Select, tap the profile, then tap the path's edges one after another (the panel counts them and shows the length), or <b>Whole path</b>. <b>4. Sweep:</b> a preview shows the body; <b>Round</b> turns sharp corners into arcs with a bend that suits the profile (its slider under More fine-tunes it); <b>Sharp</b> keeps them sharp, with clean mitred joints. A closed path makes a ring; a profile with a hole makes a pipe. <b>Apply</b> makes the body and uses the profile up; Undo brings it back.</td></tr>
+      <tr><td>Loft</td><td><b>1. Profiles:</b> draw a closed shape (a rectangle, circle, or a shape with a hole), tap it, then <b>Make profile</b>: it stays in the scene as a flat see-through shape. <b>2. Place them:</b> drag a profile by its <b>centre point</b> (in Select or Move/Rotate) to move it freely in its own plane; its centre snaps onto path points, sketch points, body corners, edge middles and face centres, other profiles' centres and the origin, and it is itself a snap point for sketches. Or in Move/Rotate tap a profile; turn on <b>Copy</b> to lift, move or turn a copy (a 90° turn stands it upright). Select a profile and tap <b>Edit sketch</b> to change its size. <b>3. Loft:</b> in Select, tap the profiles in the order the body should pass through them (numbers show the order), then <b>Loft</b>. The preview shows lines joining matching corners. <b>Smooth</b> passes smoothly through every profile, <b>Straight</b> is flat between them. Profiles with a hole make a hollow loft. <b>Apply</b> makes the body and uses the profiles up; Undo brings them back.</td></tr>
+      <tr><td>Delete</td><td><b>A body:</b> tap it, then Delete in its panel (Select or Move/Rotate). <b>A sketch line:</b> in Edit sketch tap the line (it turns orange), then Delete line. <b>A sketch shape:</b> in Edit sketch tap inside it, then Delete shape; edges it shares with a neighbouring shape stay, and a shape drawn inside it (a hole) stays too. Tap inside a hole to delete that inner shape. Undo brings anything back.</td></tr>
+      <tr><td>Scale</td><td>Tap a body (it turns cyan as a whole), then Scale. <b>Uniform</b>: drag the knob above the green pivot to scale evenly, or drag the pivot itself to another point of the body (it snaps to corners, edge middles and face centres) to scale about that point. <b>Non-uniform</b>: three knobs scale along X, Y or Z and three small plates scale two axes at once. Tap a value to type it; Copy scales a duplicate and keeps the original. Each release is one Undo step.</td></tr>
+      <tr><td>Shell</td><td>Select a body and tap the flat face to leave open (the top of a cup, the bottom of a piston), then <b>Shell</b>. Set the <b>Wall thickness</b> with the slider — the preview updates live — and Apply. Works exactly on convex bodies (a turned blank, box or cylinder); on a grooved body the walls are measured from its outer envelope, so shell before cutting grooves. One Undo removes it.</td></tr>
+      <tr><td>Chamfer / Fillet</td><td>In the Select tool, tap a drawn edge (straight, round or twisted): it turns cyan and a blue arrow appears. Drag the arrow to round or bevel the edge live; in <b>Auto</b> a curved stroke makes a fillet and a straight one a chamfer, or pick Fillet / Chamfer. Tap the value (R1.3 mm) to type it, tap more edges or a face to add its edges. The small handle on the arc (or Options → Conic) shapes the fillet from flat to sharp; tap it for a circular one again. Chamfers can use two distances (a second arrow) or a distance and an angle. Concave edges fill in. Tap empty space or Apply to finish; one Undo removes it. "Adjoining edge not blended." means the fillet runs into a neighbouring edge that is not selected.</td></tr>
+      <tr><td>Extrude a face</td><td>With a face selected, choose <b>Extrude face</b> instead of <b>Stretch body</b>: the pull grows a straight block from the face outline (a push cuts a pocket) and the rest of the body keeps its shape. Stretch moves the face and bends the walls with it.</td></tr>
+      <tr><td>Edit sketch</td><td>In any sketch tool (Line, Polyline, Rectangle, Circle) or Edit sketch: <b>drag a line</b> to move it and the lines joined to it follow; a <b>rectangle side</b> slides straight out or in, so the rectangle stays a rectangle. <b>Drag a corner</b> of a rectangle to resize it (the opposite corner stays, the sides keep their direction); drag any other <b>point</b> and its lines follow. While you drag, the original shape stays faintly visible and every side shows its length. In Edit sketch, tap a line to select it (it turns orange), then tap its length to type an exact value. In Line and Polyline, dragging from a free line end still draws a new line. <b>A circle:</b> <b>tap its centre point</b> to select it (it turns orange): then type an exact <b>X, Y and Radius</b> and Apply, or tap Delete circle. <b>Drag the centre</b> to move the whole circle (it snaps to sketch points, other circles' centres, the origin, and bodies' corners, edge middles and face centres on the sketch plane); drag its edge to change its radius. In the Circle tool, tapping a centre starts a new circle there. <b>Your sketch stays</b> when you switch to Select or Move/Rotate: the lines remain visible and are all there when you come back to a sketch tool, and they are saved with the model (Clear lines removes them). To have leaving clear the sketch instead, turn off <b>Keep sketch when leaving</b> in the ⋮ menu. Sketching happens in the 3D view: choosing Top, Front, Side or a face no longer turns the camera, and View plane looks straight at the plane when you want. Each drag is one Undo step.</td></tr>
+      <tr><td>View</td><td>Picking a sketch plane turns the camera to face it (like Shapr3D). One finger orbits (or draws while sketching), two fingers pan and pinch.</td></tr>
+      <tr><td>Move / Rotate</td><td>Pick the Move/Rotate tool and tap a body: a gizmo appears at its centre. Drag an arrow to move along that axis (0.1 steps, live distance label), drag an arc to rotate about it (a dashed ring shows the sweep; snaps to 1° and to 15° steps), drag the white centre to slide in the plane. Tap the body again to pick one face: the gizmo attaches to it and moves or turns just that face, stretching its neighbours — a rotated top twists the body. Moves that would fold the body over itself are refused. Tap the value after a drag to type it exactly; Copy leaves the original in place.</td></tr>
+      <tr><td>Move a body</td><td>In the Select tool, drag a selected body across the grid</td></tr>
+      <tr><td>Select</td><td>Like Shapr3D: <b>one tap</b> on a body selects the face you touched (push/pull, Move/Rotate face, Shell, Offset Face, Scale face…); a <b>double tap</b> selects the whole body. Zoom to a body is in its menu; Reset view is in the ⋮ menu. A tap on empty space never moves the camera.</td></tr>
+      <tr><td>Grid &amp; zoom</td><td>Zoom has no limits. The grid is infinite on the active sketch plane and re-spaces itself as you zoom: at any zoom level you see fine lines, unit lines and heavier lines at 10× and 100× (0.001 … 1,000,000 units).</td></tr>
+      <tr><td>Sketch plane</td><td>Pick a sketch tool: three planes appear at the origin — Top (horizontal), Front and Side (elevations). Tap one (or a chip) and the grid moves onto it; you draw in 2D on that plane and extrusions go perpendicular to it. "View plane" turns the camera to face it; "Change plane" goes back to the picker. Tapping a body face makes that face the plane instead.</td></tr>
+      <tr><td>Line</td><td>Press on the plane and drag: the line follows your finger in orange with its live length; release to place it (it turns blue). Start the next line at an endpoint to continue. Tap the length label of the last line to type an exact length. Tap-tap chaining still works too.</td></tr>
+      <tr><td>Finger: draw / orbit</td><td>While a sketch tool is active, one finger draws. Use two fingers to pan and pinch, or switch the chip to "Finger: orbit" to rotate the view with one finger (a stylus always draws).</td></tr>
+      <tr><td>Snapping</td><td>Every sketch tap snaps to endpoints, midpoints and intersections of your lines and of the face's edges; near an edge, the line lands exactly where it meets that edge. Grid snap is used only when nothing else is near. The hint bar tells you what it snapped to.</td></tr>
+      <tr><td>Splitting a face</td><td>Draw lines from edge to edge across a face and the face is divided into regions; pick a distance and Add, Cut or New body applies to those regions.</td></tr>
+      <tr><td>Polyline</td><td>Same as Line: drag or tap points; each segment shows its length, and the last one can be typed exactly. Tap the first point to close.</td></tr>
+      <tr><td>Circle</td><td>Drag from the centre (or tap centre, then rim). The radius shows live as "R …"; after placing, tap the R label to type the exact radius.</td></tr>
+      <tr><td>Edit a step</td><td>Open History (the clock button): <b>Edit a step</b> lists Shell, Offset Face, Fillet/Chamfer, Pattern, Rotate axis, Split and Material steps. Tap one, change its value, <b>Rebuild</b> — that step and every later one are replayed, and faces and edges are found again by position. A greyed step has a later sketch, extrude or boolean that cannot be replayed yet.</td></tr>
+      <tr><td>Material</td><td>Select a body and tap <b>Material</b>: Chrome, Brushed steel, Gold, Matte black, Red or White plastic — metals reflect a soft studio like a render. <b>Default</b> brings back the modelling colour.</td></tr>
+      <tr><td>Reference image</td><td>While sketching, tap <b>Image</b> next to Change plane and pick a picture (a hand sketch, a photo): it lies on the sketch plane, see-through. Set Size, Move across / up and Opacity, then trace over it. Remove or hide it any time.</td></tr>
+      <tr><td>Move / Rotate a sketch</td><td>In Select, tap inside the shape (orange), then <b>Move/Rotate</b>: the same arrows and rings as for a body appear on the sketch — drag an arrow to slide the whole drawing along its plane or lift it, drag a ring to tilt or turn it (tap a value to type it). Tap empty space to finish. Turning the view with a sketch selected now orbits around that shape.</td></tr>
+      <tr><td>Push through a body</td><td>Like Shapr3D: drag a sketch shape's arrow <b>into</b> a body and the extrusion <b>cuts</b> through it; drag it away from every body and it makes a new body. On a face, the arrow direction still chooses add or cut.</td></tr>
+      <tr><td>Turn or scale a cylinder wall</td><td>Tap a cylinder's side once, then <b>Move/Rotate face</b>: dragging a ring turns the whole wall (an oblique cylinder, re-cut by the caps); an arrow slides it. <b>Scale face</b> on a cylinder wall changes its radius. Holes move, turn and scale the same way.</td></tr>
+      <tr><td>Offset plane</td><td>From a flat face (<b>Offset plane</b> in the face panel) or from the current sketch plane (next to Change plane): a see-through plane appears parallel to it — set <b>Distance</b> (it moves live), then <b>Sketch</b> to draw on it. The previous sketch stays on screen.</td></tr>
+      <tr><td>Scale face</td><td>Tap a body, tap a flat face, then <b>Scale face</b>: Uniform (one Scale %) or Non-uniform (Scale X % and Scale Y % along the face). The walls re-run to the new outline — a box top scaled down gives a truncated pyramid. Works on convex bodies (box, cylinder, prism).</td></tr>
+      <tr><td>Move a hole</td><td>In Move/Rotate, tap a body, then tap the wall of a round hole: dragging the arrows slides the hole through the body and the rings tilt it — the hole keeps its size, like Shapr3D. Offset Face on a hole wall changes its diameter.</td></tr>
+      <tr><td>Offset Face</td><td>Tap a body, tap a flat face, then <b>Offset Face</b>. Tap more faces of the same body to add them; set <b>Distance</b> (negative pushes in) and Apply — every chosen face moves by the same amount.</td></tr>
+      <tr><td>Offset Edge</td><td>On a selected sketch shape (orange) or a flat face, tap <b>Offset Edge</b>: a green copy of the outline appears — negative Distance goes inside, positive outside. Apply adds it to the sketch, ready to extrude (a lid, an inset panel, a ring).</td></tr>
+      <tr><td>Pattern · Rotate axis · Split</td><td>Select a body. <b>Pattern</b> makes a row of copies along X, Y or Z (set Count and Spacing). <b>Rotate axis</b> turns it about the X, Y or Z axis through its centre by an angle. <b>Split</b> cuts it in two with a plane across X, Y or Z at a chosen position. Each shows a see-through preview; Apply or Cancel.</td></tr>
+      <tr><td>Arc</td><td>In the Line tool tap <b>Arc</b>, then tap the start, the end, and a point the curve passes through (all snap to points and crossings). Tap <b>Done</b> when finished. Arcs close regions like lines do.</td></tr>
+      <tr><td>Trim</td><td>In the Line tool tap <b>Trim</b>, then tap the piece of a line to cut away: it is cut back to the nearest crossings with other lines (a piece with no crossings is removed). One Undo brings it back.</td></tr>
+      <tr><td>Revolve about a line</td><td>Draw the closed shape and a straight line with the Line tool (or use one edge of the shape). In <b>Select</b>, tap inside the shape (it turns orange), then tap the line (it turns cyan) and tap <b>Revolve</b> — or tap <b>Revolve</b> first, then the line. A green preview shows the result; set <b>Angle °</b> for part of a turn, then <b>Done</b>. <b>Vertical axis</b> uses the plane's vertical line through the origin. The shape must stay on one side of the line.</td></tr>
+      <tr><td>Sketch</td><td>Polyline, Rectangle or Circle on the plane, then Extrude or Revolve. Revolve turns the sketch a full circle about the plane's vertical axis through the origin (the dashed line): draw a half-profile on the Front plane with one side on that axis to make a turned part, or keep it away from the axis to make a ring.</td></tr>
+      <tr><td>Sketch on a face</td><td>Pick a sketch tool, tap a body face: it becomes the sketch plane. Draw, then Add (join), Cut, or New body. Tap Change plane to return.</td></tr>
+      <tr><td>Booleans (many bodies)</td><td>Select a body, tap <b>Union</b>, <b>Subtract</b> or <b>Intersect</b>, then tap every other body to include (they turn blue; for Subtract the bodies to cut away turn red). <b>Select all</b> picks every visible body. <b>Keep Originals: Off</b> replaces them with the result; On keeps them and adds the result as a new body. A big union shows a busy spinner while it runs.</td></tr>
+      <tr><td>Project</td><td>Like Shapr3D: select a closed sketch shape (or a profile, or a body face), tap <b>Project</b>. <b>1.</b> Tap the closed sketch shapes to project (green). <b>2.</b> Tap the face to project onto (purple): a flat face or a round (cylinder) face. <b>Projection Type</b>: <b>Imprinted Body Edges</b> draws the outline onto the face as a new face region; <b>Sketches</b> (flat faces) turns it into a sketch on that face. <b>Done</b>. Shapes are projected straight along their sketch plane's normal, onto the side of the cylinder that faces the sketch.</td></tr>
+      <tr><td>Imprinted faces</td><td>Tap inside an imprint on the body (it turns blue). <b>Offset Face</b> raises it (positive) or sinks it (negative) — on a cylinder you can type the new <b>CYLINDER RADIUS</b> directly (20 → 23.6 makes a 3.6 mm rib). <b>Extrude</b> pushes it out or in as <b>New Body</b>, <b>Union</b>, <b>Subtract</b> or <b>Intersect</b>. A green (add) or red (cut) preview shows the result before Apply. Editing the body in any other way removes its imprints.</td></tr>
+      <tr><td>Knurl / herringbone (video recipe)</td><td>Cylinder → zigzag strip sketched on a Front plane in front of it → Project onto the wall → Offset Face +3.6 (ribs) or Extrude −1.5 Subtract (grooves) → Move/Rotate with <b>Copy</b> on, gizmo on the top-face centre, rotate a typed angle again and again → Union (ribs) or Intersect (grooves) all the copies. Chamfer the groove edges for V-grooves.</td></tr>
+      <tr><td>Rotate-copy (video 0:58–1:16)</td><td>Move/Rotate, tap the body. Under the gizmo are two buttons: the <b>white dot</b> — drag it and the gizmo follows, snapping onto a cylinder's axis (the centre of its top or bottom), circle centres, corners, edge middles and face centres — and <b>⧉ Copy</b> (toast "Copy ON"). Drag a rotation arc: a copy turns with your finger or pen around the gizmo while the original stays, the dashed ring and the degree label update live; lift to drop the copy there. The <b>new copy is selected</b> and the gizmo stays on the axis, so the next drag copies the newest copy. Tap the degree label for the <b>ROTATION keypad</b> (type 20, ✓). History: every step that made or changed a body has a <b>Select</b> button.</td></tr>
+      <tr><td>Items</td><td>The ◫ button (top bar) opens <b>All Items</b>: every sketch plane, profile and body. Tap the eye to hide or show it (hidden bodies can't be tapped), tap a name to select it.</td></tr>
+      <tr><td>Status line</td><td>Under the top bar: what is selected and its size — a face's area (and radius and diameter for a round face), or a body's surface area and volume.</td></tr>
+      <tr><td>Undo / Redo</td><td>Every step — each sketch point, line, plane change, import, extrude, boolean, move — is one entry. Undo / Redo buttons, Ctrl+Z / Ctrl+Y, or swipe with three fingers left / right.</td></tr>
+      <tr><td>Type a value</td><td>Tap any number label to enter an exact value</td></tr>
+      <tr><td>Import a drawing</td><td>⋮ → Import DXF / DWG. Lines, arcs, circles, polylines, splines and blocks become closed shapes you can extrude, or cut into a face. Scale it to size first.</td></tr>
+      <tr><td>Export a drawing</td><td>⋮ → Export DXF: top-view outlines and all edges of your bodies plus the current sketch. Opens in AutoCAD, Shapr3D, Fusion, FreeCAD; save as DWG there if you need DWG.</td></tr>
+      <tr><td>Save</td><td>Your model autosaves in this browser; export STL/OBJ from the ⋮ menu</td></tr>
+    </table>
+    <p class="note" id="diag" style="margin:10px 0 0"></p>
+    <p class="note" style="margin:6px 0 0">This is the web edition of SolidSketch. The native Android edition adds an exact B-rep kernel (OpenCASCADE) with fillets, chamfers, shell and STEP files.</p>
+    <div class="row" style="justify-content:flex-end;margin-top:8px"><button class="chip sel" id="help-close">Got it</button></div>
+  </div>
+</div>
