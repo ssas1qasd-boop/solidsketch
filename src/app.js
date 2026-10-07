@@ -516,7 +516,7 @@
   /** Snaps the polygon's turn so a vertex sits on a 15° step (pointy-top hexagon at 90°, like the drawing). */
   const polySnapRot = P => ({ ...P, rot: Math.round(P.rot / (Math.PI / 12)) * (Math.PI / 12) });
   function setPolygon(P, label = 'Polygon') { return named(label, () => step(() => { S.polygon = { ...P }; S.sketch = polyPts(S.polygon); S.sketchClosed = true; syncScene(); })); }
-  let afStep = null;   // the undo point of the Across flats slider gesture under way (its inputs merge into one step)
+  let afStep = null, afLast = 0;   // the undo point of the Across flats slider gesture under way (its inputs merge into one step)
   function setPolygonAF(af) { if (!S.polygon || !(af > 0)) return; setPolygon({ ...S.polygon, af }, 'Polygon size'); toast(`Across flats set to ${fmtDim(af)}`); renderUI(); }
   function polyFlats(P) { const pts = polyPts(P); const m = (a, b) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]; const k = Math.floor(P.n / 2); if (P.n % 2 === 0) return [m(pts[0], pts[1]), m(pts[k], pts[(k + 1) % P.n])]; const a = m(pts[0], pts[1]); return [a, [2 * P.c[0] - a[0], 2 * P.c[1] - a[1]]]; }   // odd n: across flats = twice the inner radius
   function setCircleRadius(r) { return named('Circle radius', () => {
@@ -569,7 +569,7 @@
   const cp2 = a => a.map(q => [q[0], q[1]]);
   function snapshot() {
     return { bodies: S.bodies, sketch: cp2(S.sketch), sketchClosed: S.sketchClosed, sketchLines: S.sketchLines.map(l => [[l[0][0], l[0][1]], [l[1][0], l[1][1]]]), lineStart: S.lineStart ? [S.lineStart[0], S.lineStart[1]] : null,
-      paths: S.paths, profiles: S.profiles, selProfiles: S.selProfiles.slice(), plane: S.plane, feats: S.feats || [], kept: (S.kept || []).map(k => ({ plane: k.plane, hidden: !!k.hidden, lines: k.lines.map(l => [l[0].slice(), l[1].slice()]) })), imported: S.imported, tool: S.tool, selectedId: S.selectedId, selectedFace: S.selectedFace, height: S.height, flip: S.flip, circle: S.circle ? { c: [S.circle.c[0], S.circle.c[1]], r: S.circle.r } : null, polygon: S.polygon ? { ...S.polygon, c: S.polygon.c.slice() } : null };
+      paths: S.paths, profiles: S.profiles, selProfiles: S.selProfiles.slice(), plane: S.plane, feats: S.feats || [], kept: (S.kept || []).map(k => ({ plane: k.plane, hidden: !!k.hidden, lines: k.lines.map(l => [l[0].slice(), l[1].slice()]) })), imported: S.imported, tool: S.tool, selectedId: S.selectedId, selectedFace: S.selectedFace, height: S.height, flip: S.flip, circle: S.circle ? { c: [S.circle.c[0], S.circle.c[1]], r: S.circle.r } : null, polygon: S.polygon ? { ...S.polygon, c: S.polygon.c.slice() } : null, polySides: S.polySides || 6 };
   }
   // History (Shapr3D-style): every command is a named step. H.past[i] is the state before step i and carries its name;
   // H.future holds undone steps (the state after each, with its name). A step without a name gets one from what changed.
@@ -603,7 +603,7 @@
     S.paths = snap.paths || []; S.selPath = null; if (typeof swDrop === 'function') swDrop();
     S.profiles = snap.profiles || []; S.selProfiles = (snap.selProfiles || []).filter(id => S.profiles.some(q => q.id === id)); if (typeof lfDrop === 'function') lfDrop();
     S.bodies = snap.bodies; S.sketch = cp2(snap.sketch); S.sketchClosed = snap.sketchClosed; S.sketchLines = snap.sketchLines.map(l => [[l[0][0], l[0][1]], [l[1][0], l[1][1]]]);
-    S.lineStart = snap.lineStart ? [snap.lineStart[0], snap.lineStart[1]] : null; S.plane = snap.plane; S.kept = (snap.kept || []).map(k => ({ plane: k.plane, hidden: !!k.hidden, lines: k.lines.map(l => [l[0].slice(), l[1].slice()]) })); S.feats = snap.feats || []; S.imported = snap.imported; S.tool = snap.tool; S.height = snap.height; S.flip = snap.flip === 'both' ? 'both' : !!snap.flip; S.circle = snap.circle ? { c: [snap.circle.c[0], snap.circle.c[1]], r: snap.circle.r } : null; S.polygon = snap.polygon ? { ...snap.polygon, c: snap.polygon.c.slice() } : null;
+    S.lineStart = snap.lineStart ? [snap.lineStart[0], snap.lineStart[1]] : null; S.plane = snap.plane; S.kept = (snap.kept || []).map(k => ({ plane: k.plane, hidden: !!k.hidden, lines: k.lines.map(l => [l[0].slice(), l[1].slice()]) })); S.feats = snap.feats || []; S.imported = snap.imported; S.tool = snap.tool; S.height = snap.height; S.flip = snap.flip === 'both' ? 'both' : !!snap.flip; S.circle = snap.circle ? { c: [snap.circle.c[0], snap.circle.c[1]], r: snap.circle.r } : null; S.polygon = snap.polygon ? { ...snap.polygon, c: snap.polygon.c.slice() } : null; S.polySides = snap.polygon ? snap.polygon.n : (snap.polySides || S.polySides);
     S.selectedId = snap.bodies.some(b => b.id === snap.selectedId) ? snap.selectedId : null; S.selectedFace = snap.selectedFace; S.lastSnap = null;
     S.pendingBool = null; S.faceTool = false; S.scaleTool = false; S.drawing = null; S.lastLine = -1; S.snapTip = null; SESSION = null; MV = null; VDRAG = null; S.selRegion = -1; S.selVertex = null; S.moveSurf = null;
     if (onFace() && !S.bodies.some(b => b.id === S.plane.bodyId)) { S.plane = null; S.selectedFace = null; }
@@ -2112,7 +2112,7 @@
   }
   /** The orange band on the selected (or dragged) sketch line. */
   function placeSelSegBand() {
-    selSegLine.geometry.dispose(); const g = S.selSeg && (S.tool === 'edit' || LDRAG) ? S.selSeg : null; selSegLine.geometry = new THREE.BufferGeometry();
+    selSegLine.geometry.dispose(); const g = S.selSeg && (S.tool === 'edit' || LDRAG || (SY && SY.axis)) ? S.selSeg : null; selSegLine.geometry = new THREE.BufferGeometry();
       if (g) { const dx = g[1][0] - g[0][0], dy = g[1][1] - g[0][1]; const L = Math.hypot(dx, dy) || 1; const mid = to3([(g[0][0] + g[1][0]) / 2, (g[0][1] + g[1][1]) / 2]); const hw = 3 * worldPerPx(mid); const ox = -dy / L * hw, oy = dx / L * hw;
         const c = [[g[0][0] + ox, g[0][1] + oy], [g[1][0] + ox, g[1][1] + oy], [g[1][0] - ox, g[1][1] - oy], [g[0][0] - ox, g[0][1] - oy]].map(q => to3(q, 0.03));
         selSegLine.geometry.setAttribute('position', new THREE.Float32BufferAttribute([...c[0], ...c[1], ...c[2], ...c[0], ...c[2], ...c[3]], 3)); }
@@ -4136,7 +4136,7 @@
       if (S.tool === 'polygon') { const row = el('div', 'row scroll'); row.append(el('span', 'note', 'Sides'));
         for (const n of [3, 4, 5, 6, 8, 10, 12]) row.append(chip(String(n), () => { S.polySides = n; if (S.polygon && S.sketchClosed) setPolygon({ ...S.polygon, n }, 'Polygon sides'); renderUI(); }, (S.polySides || 6) === n));
         panelEl.append(row);
-        if (S.polygon && S.sketchClosed) panelEl.append(slider('Across flats', 0.5, 50, 0.1, () => S.polygon.af, v => { if (!(v > 0) || !S.polygon) return; if (H.past[H.past.length - 1] !== afStep) { record('Polygon size'); afStep = H.past[H.past.length - 1]; } S.polygon = { ...S.polygon, af: v }; S.sketch = polyPts(S.polygon); syncSketch(); syncRegions(); requestRender(); })); }
+        if (S.polygon && S.sketchClosed) panelEl.append(slider('Across flats', 0.5, 50, 0.1, () => S.polygon.af, v => { if (!(v > 0) || !S.polygon) return; const now = performance.now(); if (H.past[H.past.length - 1] !== afStep || now - afLast > 700) { record('Polygon size'); afStep = H.past[H.past.length - 1]; } afLast = now; S.polygon = { ...S.polygon, af: v }; S.sketch = polyPts(S.polygon); syncSketch(); syncRegions(); requestRender(); })); }
       if (S.sketchClosed) {
         panelEl.append(slider(onFace() ? 'Extrude distance' : 'Extrude height', 0.5, 20, 0.5, () => S.height, v => { S.height = v; }));
         const row = el('div', 'row scroll');
